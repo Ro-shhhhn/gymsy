@@ -1,10 +1,7 @@
-// server/src/seeders/workoutSeeder.ts - Fixed with index cleanup
 import mongoose from 'mongoose';
 import { Workout } from '../models/Workout';
 
-// Enhanced sample workout data with better categorization
 const sampleWorkouts = [
-  // CHALLENGES CATEGORY
   {
     title: "30-Day Transformation Challenge",
     description: "Complete body transformation program combining strength, cardio, and flexibility training for maximum results.",
@@ -60,7 +57,6 @@ const sampleWorkouts = [
     isChallenge: true
   },
 
-  // HIIT CATEGORY
   {
     title: "15-Minute HIIT Blast",
     description: "Quick but intense high-intensity interval training session designed to maximize fat burn in minimal time.",
@@ -114,7 +110,6 @@ const sampleWorkouts = [
     isFeatured: true
   },
 
-  // BODY FOCUS - ABS BEGINNER
   {
     title: "Abs for Beginners - Foundation Builder",
     description: "Gentle introduction to core training focusing on proper form and building foundational strength in your abdominal muscles.",
@@ -169,7 +164,6 @@ const sampleWorkouts = [
     isFeatured: false
   },
 
-  // BODY FOCUS - ARMS INTERMEDIATE
   {
     title: "Arms Sculptor - Intermediate",
     description: "Targeted arm workout using bodyweight and resistance to build definition in biceps, triceps, and shoulders.",
@@ -224,7 +218,6 @@ const sampleWorkouts = [
     isFeatured: false
   },
 
-  // WORKOUT TYPES - KEEP FIT
   {
     title: "Daily Keep Fit Routine",
     description: "Balanced daily routine combining light cardio, strength, and flexibility to maintain overall fitness and energy.",
@@ -278,7 +271,6 @@ const sampleWorkouts = [
     isFeatured: false
   },
 
-  // WORKOUT TYPES - STRETCH & FLEXIBILITY
   {
     title: "Morning Flexibility Flow",
     description: "Gentle morning stretching routine to improve flexibility, reduce stiffness, and prepare your body for the day ahead.",
@@ -332,7 +324,6 @@ const sampleWorkouts = [
     isFeatured: false
   },
 
-  // POPULAR GOALS - FAT LOSS
   {
     title: "Fat Torcher Express",
     description: "High-energy fat burning workout combining cardio intervals with strength moves for maximum calorie burn and metabolic boost.",
@@ -386,7 +377,6 @@ const sampleWorkouts = [
     isFeatured: true
   },
 
-  // QUICK WORKOUTS
   {
     title: "10-Minute Power Boost",
     description: "Quick but effective workout to boost energy and mood when you're short on time but need to move your body.",
@@ -440,7 +430,6 @@ const sampleWorkouts = [
     isFeatured: false
   },
 
-  // STRENGTH TRAINING
   {
     title: "Bodyweight Strength Builder",
     description: "Progressive bodyweight strength training program designed to build functional strength using only your body weight.",
@@ -494,7 +483,6 @@ const sampleWorkouts = [
     isFeatured: false
   },
 
-  // MUSCLE GAIN
   {
     title: "Muscle Building Foundation",
     description: "Comprehensive muscle building program focusing on compound movements and progressive overload for lean muscle development.",
@@ -549,12 +537,10 @@ const sampleWorkouts = [
   }
 ];
 
-// Seeder function
 export const seedWorkouts = async () => {
   try {
     console.log('🌱 Starting enhanced workout seeder...');
     
-    // FIXED: Drop existing indexes and clear collection
     console.log('🧹 Dropping existing indexes...');
     try {
       await Workout.collection.dropIndexes();
@@ -563,15 +549,12 @@ export const seedWorkouts = async () => {
       console.log('ℹ️ No indexes to drop or collection doesn\'t exist yet');
     }
     
-    // Clear existing workouts
     await Workout.deleteMany({});
     console.log('✅ Cleared existing workouts');
     
-    // Insert sample workouts
     const insertedWorkouts = await Workout.insertMany(sampleWorkouts);
     console.log(`✅ Inserted ${insertedWorkouts.length} categorized workouts`);
     
-    // Log category statistics
     const categoryStats = await Workout.aggregate([
       {
         $group: {
@@ -589,7 +572,6 @@ export const seedWorkouts = async () => {
       console.log(`   ${stat._id}: ${stat.count} workouts (avg ${Math.round(stat.avgDuration)} min)`);
     });
     
-    // Log fitness level distribution
     const levelStats = await Workout.aggregate([
       {
         $group: {
@@ -604,7 +586,6 @@ export const seedWorkouts = async () => {
       console.log(`   ${stat._id}: ${stat.count} workouts`);
     });
     
-    // Log body focus areas
     const focusStats = await Workout.aggregate([
       { $unwind: '$focusAreas' },
       {
@@ -631,18 +612,14 @@ export const seedWorkouts = async () => {
   }
 };
 
-// Run seeder if this file is executed directly
 if (require.main === module) {
   const runSeeder = async () => {
     try {
-      // Connect to MongoDB
       await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/gymsy');
       console.log('🔌 Connected to MongoDB');
       
-      // Run seeder
       await seedWorkouts();
       
-      // Close connection
       await mongoose.connection.close();
       console.log('🔌 Disconnected from MongoDB');
       

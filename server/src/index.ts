@@ -10,6 +10,7 @@ import authRoutes from './routes/auth';
 import dashboardRoutes from './routes/dashboard';
 import preferencesRoutes from './routes/preferences';
 import workoutRoutes from './routes/workouts'; // New import
+import adminAuthRoutes from './admin/routes/adminAuth';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -77,6 +78,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/preferences', preferencesRoutes);
 app.use('/api/workouts', workoutRoutes); // New route
+app.use('/api/admin/auth', adminAuthRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

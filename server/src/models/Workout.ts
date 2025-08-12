@@ -1,4 +1,3 @@
-// server/src/models/Workout.ts - Fixed parallel array index issue
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IWorkout extends Document {
@@ -6,60 +5,53 @@ export interface IWorkout extends Document {
   description: string;
   goal: 'Fat Loss' | 'Muscle Gain' | 'Strength' | 'Endurance' | 'Flexibility' | 'General Fitness';
   fitnessLevel: 'Beginner' | 'Intermediate' | 'Advanced';
-  duration: number; // Total workout time in minutes
-  focusAreas: string[]; // e.g., ['Arms', 'Core', 'Legs']
+  duration: number;
+  focusAreas: string[];
   workoutType: 'Home' | 'Gym' | 'No Equipment' | 'Dumbbells/Bands Only';
   caloriesBurnEstimate: number;
   planDuration: '2 weeks' | '4 weeks' | '6 weeks' | '8+ weeks';
   
-  // Enhanced categorization fields
   category: 'Challenge' | 'HIIT' | 'Strength' | 'Cardio' | 'Flexibility' | 'Beginner' | 'Quick' | 'General';
-  subcategory?: string; // e.g., 'Abs Beginner', 'Arms Intermediate'
+  subcategory?: string;
   workoutStyle: 'Circuit' | 'Traditional' | 'AMRAP' | 'EMOM' | 'Tabata' | 'Pyramid' | 'Ladder' | 'Custom';
   
-  // Exercise details
   exercises: Array<{
     name: string;
     sets: number;
     reps?: number;
-    duration?: number; // for time-based exercises in seconds
-    restTime: number; // in seconds
+    duration?: number;
+    restTime: number;
     instructions?: string;
     targetMuscles: string[];
     equipment?: string[];
-    video?: string; // URL to exercise demo video
-    image?: string; // URL to exercise illustration
+    video?: string;
+    image?: string;
   }>;
   
-  // Weekly schedule
   workoutsPerWeek: number;
   schedule?: Array<{
-    day: number; // 1-7 (Monday-Sunday)
-    exercises: number[]; // indices of exercises for this day
+    day: number;
+    exercises: number[];
   }>;
   
-  // Media and engagement
   imageUrl?: string;
   videoUrl?: string;
-  thumbnailUrl?: string; // For better loading performance
-  tags: string[]; // for additional filtering
-  difficulty: 1 | 2 | 3 | 4 | 5; // 1 = Very Easy, 5 = Very Hard
-  rating: number; // Average rating 1-5
+  thumbnailUrl?: string;
+  tags: string[];
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  rating: number;
   totalRatings: number;
   
-  // Enhanced admin/creator info
   createdBy: 'Admin' | 'AI' | 'Professional' | 'Community';
-  creatorId?: string; // Reference to the creator
+  creatorId?: string;
   isPublished: boolean;
   isFeatured: boolean;
-  isChallenge: boolean; // Special flag for challenge workouts
-  isPremium: boolean; // For potential premium content
+  isChallenge: boolean;
+  isPremium: boolean;
   
-  // SEO and searchability
-  seoKeywords: string[]; // Better search optimization
-  shortDescription: string; // For cards and previews
+  seoKeywords: string[];
+  shortDescription: string;
   
-  // Metadata
   createdAt: Date;
   updatedAt: Date;
   publishedAt?: Date;
@@ -78,7 +70,7 @@ const workoutSchema = new Schema<IWorkout>({
     type: String,
     required: true,
     trim: true,
-    maxlength: 1000 // Increased for more detailed descriptions
+    maxlength: 1000
   },
   shortDescription: {
     type: String,
@@ -134,7 +126,6 @@ const workoutSchema = new Schema<IWorkout>({
     index: true
   },
   
-  // Enhanced categorization
   category: {
     type: String,
     required: true,
@@ -173,7 +164,7 @@ const workoutSchema = new Schema<IWorkout>({
       max: 200
     },
     duration: {
-      type: Number, // in seconds
+      type: Number,
       min: 5,
       max: 600
     },
@@ -269,7 +260,6 @@ const workoutSchema = new Schema<IWorkout>({
     min: 0
   },
   
-  // Enhanced creator info
   createdBy: {
     type: String,
     required: true,
@@ -315,7 +305,6 @@ const workoutSchema = new Schema<IWorkout>({
   toObject: { virtuals: true }
 });
 
-// Compound indexes for efficient filtering and sorting
 workoutSchema.index({ goal: 1, fitnessLevel: 1, workoutType: 1 });
 workoutSchema.index({ category: 1, subcategory: 1 });
 workoutSchema.index({ focusAreas: 1, difficulty: 1 });
@@ -324,11 +313,9 @@ workoutSchema.index({ rating: -1, totalRatings: -1 });
 workoutSchema.index({ createdAt: -1, isPublished: 1 });
 workoutSchema.index({ isPublished: 1, isFeatured: -1, createdAt: -1 });
 
-// FIXED: Separate indexes for array fields instead of compound index
 workoutSchema.index({ tags: 1 });
 workoutSchema.index({ seoKeywords: 1 });
 
-// Text search index for better searchability
 workoutSchema.index({
   title: 'text',
   description: 'text',
@@ -345,26 +332,22 @@ workoutSchema.index({
   }
 });
 
-// Virtual for average rating display
 workoutSchema.virtual('averageRating').get(function(this: IWorkout) {
   return this.totalRatings > 0 ? Math.round((this.rating / this.totalRatings) * 10) / 10 : 0;
 });
 
-// Virtual for total exercises count
 workoutSchema.virtual('totalExercises').get(function(this: IWorkout) {
   return this.exercises.length;
 });
 
-// Virtual for estimated workout completion time (including rest)
 workoutSchema.virtual('estimatedCompletionTime').get(function(this: IWorkout) {
   const exerciseTime = this.exercises.reduce((total, exercise) => {
-    const exerciseDuration = exercise.duration || (exercise.reps ? exercise.reps * 3 : 0); // Estimate 3 seconds per rep
+    const exerciseDuration = exercise.duration || (exercise.reps ? exercise.reps * 3 : 0);
     return total + (exerciseDuration * exercise.sets) + (exercise.restTime * (exercise.sets - 1));
   }, 0);
-  return Math.ceil(exerciseTime / 60); // Convert to minutes
+  return Math.ceil(exerciseTime / 60);
 });
 
-// Pre-save middleware to set published date
 workoutSchema.pre('save', function(next) {
   if (this.isNew && this.isPublished && !this.publishedAt) {
     this.publishedAt = new Date();
@@ -372,9 +355,7 @@ workoutSchema.pre('save', function(next) {
   next();
 });
 
-// Pre-save middleware to auto-categorize based on content
 workoutSchema.pre('save', function(next) {
-  // Auto-set category based on other fields if not explicitly set
   if (this.isModified('goal') || this.isModified('duration') || this.isModified('tags') || this.isNew) {
     if (this.isFeatured || this.isChallenge) {
       this.category = 'Challenge';
@@ -394,7 +375,6 @@ workoutSchema.pre('save', function(next) {
       this.category = 'General';
     }
 
-    // Auto-set subcategory for body focus workouts
     if (this.focusAreas.length === 1 && this.focusAreas[0] !== 'Full Body') {
       this.subcategory = `${this.focusAreas[0]} ${this.fitnessLevel}`;
     }
@@ -402,7 +382,6 @@ workoutSchema.pre('save', function(next) {
   next();
 });
 
-// Static method to get workout categories for filtering
 workoutSchema.statics.getCategories = function() {
   return [
     { key: 'Challenge', name: 'Challenges', icon: 'Award' },
@@ -416,7 +395,6 @@ workoutSchema.statics.getCategories = function() {
   ];
 };
 
-// Static method to get popular filter combinations
 workoutSchema.statics.getPopularFilters = function() {
   return [
     {
