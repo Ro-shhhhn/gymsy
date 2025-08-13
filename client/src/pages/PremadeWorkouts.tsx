@@ -109,7 +109,8 @@ const PremadeWorkouts: React.FC = () => {
     fitnessLevels: [],
     workoutTypes: [],
     focusAreas: [],
-    planDurations: []
+    planDurations: [],
+    categories: [] // ✅ Fixed: Added the missing categories property
   });
   
   // Pagination state

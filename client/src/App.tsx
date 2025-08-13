@@ -1,4 +1,4 @@
-// src/App.tsx - Updated with PremadeWorkouts route
+// src/App.tsx - Updated with WorkoutDetails and Admin routes
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/layout/Navbar';
@@ -13,7 +13,9 @@ import OTPVerification from './pages/OTPVerification';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import UserPreferences from './pages/UserPreferences';
-import PremadeWorkouts from './pages/PremadeWorkouts'; // New import
+import PremadeWorkouts from './pages/PremadeWorkouts';
+import WorkoutDetails from './pages/WorkoutDetails';
+import AdminLogin from './admin/pages/AdminLogin';
 import { isAuthenticated } from './utils/api';
 
 // Protected Route Component
@@ -68,20 +70,27 @@ const App: React.FC = () => {
           </ProtectedRoute>
         } />
 
-        {/* Updated Pre-Made Workouts Route */}
+        {/* Workout Plans Routes */}
         <Route path="/workout-plans" element={
           <ProtectedRoute>
             <PremadeWorkouts />
           </ProtectedRoute>
         } />
 
-        {/* Future workout plan detail route */}
+        {/* Workout Plan Details Route */}
         <Route path="/workout-plan/:id" element={
+          <ProtectedRoute>
+            <WorkoutDetails />
+          </ProtectedRoute>
+        } />
+
+        {/* Future workout session route */}
+        <Route path="/workout-session/:id" element={
           <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
               <div className="text-center text-white">
-                <h1 className="text-3xl font-bold mb-4">🔍 Workout Plan Details</h1>
-                <p className="text-purple-200 mb-8">Coming Soon! View detailed workout plan information and exercises.</p>
+                <h1 className="text-3xl font-bold mb-4">🏃‍♂️ Workout Session</h1>
+                <p className="text-purple-200 mb-8">Coming Soon! Start your live workout session with timer and exercise tracking.</p>
                 <button 
                   onClick={() => window.history.back()}
                   className="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg transition-colors"
@@ -161,6 +170,10 @@ const App: React.FC = () => {
             </div>
           </ProtectedRoute>
         } />
+
+        {/* Admin Routes */}
+        <Route path="/admin/login" element={<AdminLogin />} />
+        
 
         {/* Home route - with navbar/footer */}
         <Route path="/" element={
