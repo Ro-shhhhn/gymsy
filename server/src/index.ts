@@ -1,16 +1,14 @@
-// server/src/index.ts - Updated with workout routes
 import express from 'express';
 import dotenv from 'dotenv';
 dotenv.config();
 import cors from 'cors';
 import mongoose from 'mongoose';
 
-// Import routes
+// Import user routes
 import authRoutes from './routes/auth';
 import dashboardRoutes from './routes/dashboard';
 import preferencesRoutes from './routes/preferences';
-import workoutRoutes from './routes/workouts'; // New import
-import adminAuthRoutes from './admin/routes/adminAuth';
+import workoutRoutes from './routes/workouts';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -35,7 +33,6 @@ if (process.env.NODE_ENV !== 'production') {
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/gymsy', {
-      // Removed deprecated options that are now defaults in newer versions
       maxPoolSize: 10,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
@@ -73,12 +70,11 @@ const connectDB = async () => {
 // Connect to database
 connectDB();
 
-// Routes
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/preferences', preferencesRoutes);
-app.use('/api/workouts', workoutRoutes); // New route
-app.use('/api/admin/auth', adminAuthRoutes);
+app.use('/api/workouts', workoutRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

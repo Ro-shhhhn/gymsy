@@ -42,7 +42,7 @@ export interface IWorkout extends Document {
   rating: number;
   totalRatings: number;
   
-  createdBy: 'Admin' | 'AI' | 'Professional' | 'Community';
+  createdBy: 'System' | 'AI' | 'Professional' | 'Community';
   creatorId?: string;
   isPublished: boolean;
   isFeatured: boolean;
@@ -263,8 +263,8 @@ const workoutSchema = new Schema<IWorkout>({
   createdBy: {
     type: String,
     required: true,
-    enum: ['Admin', 'AI', 'Professional', 'Community'],
-    default: 'Admin',
+    enum: ['System', 'AI', 'Professional', 'Community'],
+    default: 'System',
     index: true
   },
   creatorId: {

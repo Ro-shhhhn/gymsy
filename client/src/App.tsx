@@ -1,4 +1,3 @@
-// src/App.tsx - Updated with PremadeWorkouts route
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/layout/Navbar';
@@ -13,10 +12,10 @@ import OTPVerification from './pages/OTPVerification';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import UserPreferences from './pages/UserPreferences';
-import PremadeWorkouts from './pages/PremadeWorkouts'; // New import
+import PremadeWorkouts from './pages/PremadeWorkouts';
 import { isAuthenticated } from './utils/api';
 
-// Protected Route Component
+// Protected Route Component for Users
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />;
 };
@@ -68,14 +67,14 @@ const App: React.FC = () => {
           </ProtectedRoute>
         } />
 
-        {/* Updated Pre-Made Workouts Route */}
+        {/* Pre-Made Workouts Route */}
         <Route path="/workout-plans" element={
           <ProtectedRoute>
             <PremadeWorkouts />
           </ProtectedRoute>
         } />
 
-        {/* Future workout plan detail route */}
+        {/* Workout plan detail route */}
         <Route path="/workout-plan/:id" element={
           <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -93,7 +92,7 @@ const App: React.FC = () => {
           </ProtectedRoute>
         } />
 
-        {/* Other placeholder routes */}
+        {/* Other feature routes */}
         <Route path="/ai-recommender" element={
           <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
@@ -183,7 +182,13 @@ const App: React.FC = () => {
               <h1 className="text-4xl font-bold mb-4">404</h1>
               <p className="text-purple-200 mb-8">Page not found</p>
               <button 
-                onClick={() => window.location.href = isAuthenticated() ? '/dashboard' : '/'}
+                onClick={() => {
+                  if (isAuthenticated()) {
+                    window.location.href = '/dashboard';
+                  } else {
+                    window.location.href = '/';
+                  }
+                }}
                 className="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg transition-colors"
               >
                 {isAuthenticated() ? 'Go to Dashboard' : 'Go Home'}

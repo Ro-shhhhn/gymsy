@@ -1,0 +1,20 @@
+{
+  "name": "gymsy-fullstack",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Gymsy AI Fitness App - Full Stack",
+  "scripts": {
+    "dev": "concurrently \"npm run client\" \"npm run server\"",
+    "client": "cd client && npm run dev",
+    "server": "cd server && npm run dev",
+    "build": "cd client && npm run build",
+    "install-deps": "cd client && npm install && cd ../server && npm install",
+    "clean": "cd client && rm -rf node_modules && cd ../server && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "keywords": ["fitness", "ai", "workout", "mern", "react", "express"],
+  "author": "Your Name",
+  "license": "ISC"
+}

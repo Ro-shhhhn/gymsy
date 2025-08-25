@@ -119,8 +119,7 @@ export interface WorkoutPlan {
   // Legacy fields for backward compatibility
   targetGoals?: string[];
   
-  createdBy: 'Admin' | 'AI' | 'Professional' | 'Community'; // Extended with Community
-  isPublished: boolean;
+  createdBy: 'System' | 'AI' | 'Professional' | 'Community'; 
   isFeatured: boolean;
   
   createdAt: string;
