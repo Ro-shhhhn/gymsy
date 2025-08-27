@@ -1,57 +1,23 @@
-// src/pages/PremadeWorkouts.tsx - Enhanced with categorized sections
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-  ArrowLeft, 
-  Grid3x3, 
-  List, 
-  SortAsc, 
-  SortDesc, 
-  Loader2,
-  AlertCircle,
-  Sparkles,
-  TrendingUp,
-  Filter,
-  Search,
-  RefreshCw,
-  Zap,
-  Target,
-  Flame,
-  Heart,
-  Dumbbell,
-  Activity,
-  Award,
-  Clock
+  ArrowLeft, Grid3x3, List, Loader2, AlertCircle, Search, RefreshCw,
+  Zap, Target, Flame, Dumbbell, Award, Clock, Filter, TrendingUp
 } from 'lucide-react';
 import WorkoutCard from '../components/ui/WorkoutCard';
 import WorkoutFilters from '../components/ui/WorkoutFilters';
 import { api, handleAuthError, ApiError } from '../utils/api';
 import type { 
-  WorkoutPlan, 
-  WorkoutFilters as WorkoutFiltersType, 
-  WorkoutSortOptions, 
-  WorkoutFilterOptions,
-  WorkoutResponse 
+  WorkoutPlan, WorkoutFilters as WorkoutFiltersType, 
+  WorkoutSortOptions, WorkoutFilterOptions, WorkoutResponse 
 } from '../types';
 
-// Category definitions for better organization
+// Consolidated category definitions
 const WORKOUT_CATEGORIES = {
-  challenges: {
-    title: "🏆 Challenges",
-    description: "Push your limits with these challenging workout programs",
-    icon: Award,
-    filters: { featured: true }
-  },
-  hiit: {
-    title: "🔥 HIIT Workouts",
-    description: "High-intensity interval training for maximum results",
-    icon: Zap,
-    filters: { search: "hiit" }
-  },
-  bodyFocus: {
-    title: "🎯 Body Focus",
-    description: "Target specific muscle groups with focused routines",
-    icon: Target,
+  challenges: { title: "🏆 Challenges", description: "Push your limits", icon: Award, filters: { featured: true } },
+  hiit: { title: "🔥 HIIT Workouts", description: "High-intensity training", icon: Zap, filters: { search: "hiit" } },
+  bodyFocus: { 
+    title: "🎯 Body Focus", description: "Target specific muscles", icon: Target,
     subcategories: [
       { name: "Abs Beginner", filters: { focusAreas: ["Core", "Abs"], fitnessLevel: "Beginner" } },
       { name: "Arms Intermediate", filters: { focusAreas: ["Arms"], fitnessLevel: "Intermediate" } },
@@ -59,10 +25,8 @@ const WORKOUT_CATEGORIES = {
       { name: "Full Body", filters: { focusAreas: ["Full Body"] } }
     ]
   },
-  workoutTypes: {
-    title: "💪 Workout Types",
-    description: "Choose based on your preferred training style",
-    icon: Dumbbell,
+  workoutTypes: { 
+    title: "💪 Workout Types", description: "Choose your training style", icon: Dumbbell,
     subcategories: [
       { name: "Keep Fit", filters: { goal: "General Fitness" } },
       { name: "Stretch & Flexibility", filters: { goal: "Flexibility" } },
@@ -71,82 +35,74 @@ const WORKOUT_CATEGORIES = {
       { name: "Muscle Gain", filters: { goal: "Muscle Gain" } }
     ]
   },
-  popularGoals: {
-    title: "⭐ Popular Goals",
-    description: "Most sought-after fitness objectives",
-    icon: TrendingUp,
-    filters: { goal: "Fat Loss" } // Show fat loss as default popular goal
-  },
-  quickWorkouts: {
-    title: "⚡ Quick Workouts",
-    description: "Short but effective routines for busy schedules",
-    icon: Clock,
-    filters: { maxDuration: 30 }
-  }
+  popularGoals: { title: "⭐ Popular Goals", description: "Most sought-after objectives", icon: TrendingUp, filters: { goal: "Fat Loss" } },
+  quickWorkouts: { title: "⚡ Quick Workouts", description: "Short but effective", icon: Clock, filters: { maxDuration: 30 } }
 };
 
 const PremadeWorkouts: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // State management
-  const [allWorkouts, setAllWorkouts] = useState<WorkoutPlan[]>([]);
-  const [categorizedWorkouts, setCategorizedWorkouts] = useState<{[key: string]: WorkoutPlan[]}>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  
-  // Filter and pagination state
+  // Consolidated state
+  const [state, setState] = useState({
+    allWorkouts: [] as WorkoutPlan[],
+    categorizedWorkouts: {} as {[key: string]: WorkoutPlan[]},
+    loading: true,
+    error: null as string | null,
+    showFilters: false,
+    viewMode: 'grid' as 'grid' | 'list',
+    activeCategory: 'all',
+    currentPage: 1,
+    totalPages: 1,
+    totalCount: 0,
+    savedWorkouts: new Set<string>()
+  });
+
   const [filters, setFilters] = useState<WorkoutFiltersType>({});
-  const [sortOptions, setSortOptions] = useState<WorkoutSortOptions>({
-    sortBy: 'createdAt',
-    sortOrder: 'desc'
-  });
+  const [sortOptions, setSortOptions] = useState<WorkoutSortOptions>({ sortBy: 'createdAt', sortOrder: 'desc' });
   const [filterOptions, setFilterOptions] = useState<WorkoutFilterOptions>({
-    goals: [],
-    fitnessLevels: [],
-    workoutTypes: [],
-    focusAreas: [],
-    planDurations: []
+    goals: [], fitnessLevels: [], workoutTypes: [], focusAreas: [], planDurations: []
   });
-  
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const [hasNext, setHasNext] = useState(false);
-  const [hasPrev, setHasPrev] = useState(false);
-  const limit = 50; // Increased limit to get more workouts for categorization
 
-  // Saved workouts state (for future implementation)
-  const [savedWorkouts, setSavedWorkouts] = useState<Set<string>>(new Set());
+  const limit = 50;
 
-  // Fetch workouts function
-  const fetchWorkouts = useCallback(async (page: number = 1, resetList: boolean = true) => {
+  // Categorize workouts utility
+  const categorizeWorkouts = (workouts: WorkoutPlan[]) => {
+    const categorized = Object.keys(WORKOUT_CATEGORIES).reduce((acc, key) => {
+      acc[key] = [];
+      return acc;
+    }, {} as {[key: string]: WorkoutPlan[]});
+
+    workouts.forEach(workout => {
+      if (workout.isFeatured) categorized.challenges.push(workout);
+      if (workout.tags.some(tag => tag.toLowerCase().includes('hiit')) || 
+          workout.title.toLowerCase().includes('hiit')) categorized.hiit.push(workout);
+      if (workout.focusAreas.some(area => ['Core', 'Abs', 'Arms', 'Legs', 'Full Body'].includes(area))) categorized.bodyFocus.push(workout);
+      categorized.workoutTypes.push(workout);
+      if (workout.goal === 'Fat Loss') categorized.popularGoals.push(workout);
+      if (workout.duration <= 30) categorized.quickWorkouts.push(workout);
+    });
+
+    setState(prev => ({ ...prev, categorizedWorkouts: categorized }));
+  };
+
+  // Fetch workouts
+  const fetchWorkouts = useCallback(async (page: number = 1) => {
     try {
-      if (loading && allWorkouts.length === 0) {
-        setLoading(true);
-        setError(null);
+      if (state.loading && state.allWorkouts.length === 0) {
+        setState(prev => ({ ...prev, loading: true, error: null }));
       }
 
-      const queryParams = new URLSearchParams();
-      queryParams.append('page', page.toString());
-      queryParams.append('limit', limit.toString());
-      queryParams.append('sortBy', sortOptions.sortBy);
-      queryParams.append('sortOrder', sortOptions.sortOrder);
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        sortBy: sortOptions.sortBy,
+        sortOrder: sortOptions.sortOrder,
+        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== undefined && v !== ''))
+      });
 
-      // Add filters to query
-      if (filters.goal) queryParams.append('goal', filters.goal);
-      if (filters.fitnessLevel) queryParams.append('fitnessLevel', filters.fitnessLevel);
-      if (filters.workoutType) queryParams.append('workoutType', filters.workoutType);
-      if (filters.planDuration) queryParams.append('planDuration', filters.planDuration);
-      if (filters.search) queryParams.append('search', filters.search);
-      if (filters.featured) queryParams.append('featured', 'true');
-      if (filters.minDuration) queryParams.append('minDuration', filters.minDuration.toString());
-      if (filters.maxDuration) queryParams.append('maxDuration', filters.maxDuration.toString());
-      if (filters.focusAreas && filters.focusAreas.length > 0) {
+      // Handle array filters
+      if (filters.focusAreas?.length) {
         filters.focusAreas.forEach(area => queryParams.append('focusAreas', area));
       }
 
@@ -161,21 +117,18 @@ const PremadeWorkouts: React.FC = () => {
       );
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new ApiError(data.message || 'Failed to fetch workouts', response.status);
-      }
+      if (!response.ok) throw new ApiError(data.message || 'Failed to fetch workouts', response.status);
 
       const workoutData: WorkoutResponse = data.data;
       
-      setAllWorkouts(workoutData.workouts);
-      setCurrentPage(workoutData.pagination.currentPage);
-      setTotalPages(workoutData.pagination.totalPages);
-      setTotalCount(workoutData.pagination.totalCount);
-      setHasNext(workoutData.pagination.hasNext);
-      setHasPrev(workoutData.pagination.hasPrev);
+      setState(prev => ({
+        ...prev,
+        allWorkouts: workoutData.workouts,
+        currentPage: workoutData.pagination.currentPage,
+        totalPages: workoutData.pagination.totalPages,
+        totalCount: workoutData.pagination.totalCount
+      }));
 
-      // Categorize workouts
       categorizeWorkouts(workoutData.workouts);
 
     } catch (error) {
@@ -183,58 +136,14 @@ const PremadeWorkouts: React.FC = () => {
       
       if (error instanceof ApiError) {
         handleAuthError(error);
-        setError(error.message);
+        setState(prev => ({ ...prev, error: error.message }));
       } else {
-        setError('Failed to load workouts. Please try again.');
+        setState(prev => ({ ...prev, error: 'Failed to load workouts. Please try again.' }));
       }
     } finally {
-      setLoading(false);
+      setState(prev => ({ ...prev, loading: false }));
     }
-  }, [filters, sortOptions, allWorkouts.length, loading]);
-
-  // Categorize workouts based on predefined categories
-  const categorizeWorkouts = (workouts: WorkoutPlan[]) => {
-    const categorized: {[key: string]: WorkoutPlan[]} = {};
-
-    // Initialize all categories
-    Object.keys(WORKOUT_CATEGORIES).forEach(key => {
-      categorized[key] = [];
-    });
-
-    // Categorize workouts
-    workouts.forEach(workout => {
-      // Featured/Challenges
-      if (workout.isFeatured) {
-        categorized.challenges.push(workout);
-      }
-
-      // HIIT workouts
-      if (workout.tags.some(tag => tag.toLowerCase().includes('hiit')) || 
-          workout.title.toLowerCase().includes('hiit')) {
-        categorized.hiit.push(workout);
-      }
-
-      // Body focus workouts
-      if (workout.focusAreas.some(area => ['Core', 'Abs', 'Arms', 'Legs', 'Full Body'].includes(area))) {
-        categorized.bodyFocus.push(workout);
-      }
-
-      // Workout types
-      categorized.workoutTypes.push(workout);
-
-      // Popular goals (Fat Loss as example)
-      if (workout.goal === 'Fat Loss') {
-        categorized.popularGoals.push(workout);
-      }
-
-      // Quick workouts (30 minutes or less)
-      if (workout.duration <= 30) {
-        categorized.quickWorkouts.push(workout);
-      }
-    });
-
-    setCategorizedWorkouts(categorized);
-  };
+  }, [filters, sortOptions, state.allWorkouts.length, state.loading]);
 
   // Fetch filter options
   const fetchFilterOptions = async () => {
@@ -250,7 +159,6 @@ const PremadeWorkouts: React.FC = () => {
       );
 
       const data = await response.json();
-      
       if (response.ok && data.data?.filterOptions) {
         setFilterOptions(data.data.filterOptions);
       }
@@ -265,73 +173,62 @@ const PremadeWorkouts: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchWorkouts(1, true);
-    setCurrentPage(1);
+    fetchWorkouts(1);
+    setState(prev => ({ ...prev, currentPage: 1 }));
   }, [filters, sortOptions]);
 
   useEffect(() => {
-    if (location.state?.message) {
-      console.log(location.state.message);
-    }
+    if (location.state?.message) console.log(location.state.message);
   }, [location]);
 
   // Event handlers
   const handleFilterChange = (newFilters: WorkoutFiltersType) => {
     setFilters(newFilters);
-    setCurrentPage(1);
-    setActiveCategory('all');
+    setState(prev => ({ ...prev, currentPage: 1, activeCategory: 'all' }));
   };
 
   const handleClearFilters = () => {
     setFilters({});
-    setCurrentPage(1);
-    setActiveCategory('all');
+    setState(prev => ({ ...prev, currentPage: 1, activeCategory: 'all' }));
   };
 
   const handleSortChange = (newSortOptions: WorkoutSortOptions) => {
     setSortOptions(newSortOptions);
-    setCurrentPage(1);
+    setState(prev => ({ ...prev, currentPage: 1 }));
   };
 
-  const handleViewPlan = (workoutId: string) => {
-    navigate(`/workout-plan/${workoutId}`);
-  };
+  const handleViewPlan = (workoutId: string) => navigate(`/workout-plan/${workoutId}`);
 
   const handleSavePlan = async (workoutId: string) => {
-    try {
-      const newSavedWorkouts = new Set(savedWorkouts);
-      if (savedWorkouts.has(workoutId)) {
-        newSavedWorkouts.delete(workoutId);
-      } else {
-        newSavedWorkouts.add(workoutId);
-      }
-      setSavedWorkouts(newSavedWorkouts);
-    } catch (error) {
-      console.error('Save workout error:', error);
-    }
+    setState(prev => {
+      const newSaved = new Set(prev.savedWorkouts);
+      newSaved.has(workoutId) ? newSaved.delete(workoutId) : newSaved.add(workoutId);
+      return { ...prev, savedWorkouts: newSaved };
+    });
   };
 
   const handleCategoryFilter = (categoryKey: string, categoryFilters?: WorkoutFiltersType) => {
     if (categoryKey === 'all') {
       setFilters({});
-      setActiveCategory('all');
+      setState(prev => ({ ...prev, activeCategory: 'all' }));
     } else {
       setFilters(categoryFilters || {});
-      setActiveCategory(categoryKey);
+      setState(prev => ({ ...prev, activeCategory: categoryKey }));
     }
-    setCurrentPage(1);
+    setState(prev => ({ ...prev, currentPage: 1 }));
   };
 
-  const handleRefresh = () => {
-    fetchWorkouts(currentPage, true);
-  };
+  const toggleShowFilters = () => setState(prev => ({ ...prev, showFilters: !prev.showFilters }));
+  const toggleViewMode = (mode: 'grid' | 'list') => setState(prev => ({ ...prev, viewMode: mode }));
+  const handleRefresh = () => fetchWorkouts(state.currentPage);
 
   // Render category section
   const renderCategorySection = (categoryKey: string, category: any) => {
-    const workouts = categorizedWorkouts[categoryKey] || [];
+    const workouts = state.categorizedWorkouts[categoryKey] || [];
     if (workouts.length === 0) return null;
 
     const Icon = category.icon;
+    const maxDisplay = state.viewMode === 'grid' ? 6 : 4;
 
     return (
       <div key={categoryKey} className="mb-12">
@@ -346,7 +243,6 @@ const PremadeWorkouts: React.FC = () => {
             </div>
           </div>
           
-          {/* View All Button */}
           <button
             onClick={() => handleCategoryFilter(categoryKey, category.filters)}
             className="flex items-center space-x-2 px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium"
@@ -356,7 +252,6 @@ const PremadeWorkouts: React.FC = () => {
           </button>
         </div>
 
-        {/* Subcategory filters if available */}
         {category.subcategories && (
           <div className="flex flex-wrap gap-2 mb-6">
             {category.subcategories.map((subcat: any, index: number) => (
@@ -371,31 +266,29 @@ const PremadeWorkouts: React.FC = () => {
           </div>
         )}
 
-        {/* Workout cards grid */}
-        <div className={`${
-          viewMode === 'grid' 
-            ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6' 
-            : 'space-y-4'
-        }`}>
-          {workouts.slice(0, viewMode === 'grid' ? 6 : 4).map((workout) => (
+        <div className={state.viewMode === 'grid' 
+          ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6' 
+          : 'space-y-4'
+        }>
+          {workouts.slice(0, maxDisplay).map((workout) => (
             <WorkoutCard
               key={workout._id}
               workout={workout}
               onViewPlan={handleViewPlan}
               onSavePlan={handleSavePlan}
-              isSaved={savedWorkouts.has(workout._id)}
-              className={viewMode === 'list' ? 'max-w-full' : ''}
+              isSaved={state.savedWorkouts.has(workout._id)}
+              className={state.viewMode === 'list' ? 'max-w-full' : ''}
             />
           ))}
         </div>
 
-        {workouts.length > (viewMode === 'grid' ? 6 : 4) && (
+        {workouts.length > maxDisplay && (
           <div className="mt-4 text-center">
             <button
               onClick={() => handleCategoryFilter(categoryKey, category.filters)}
               className="text-blue-600 hover:text-blue-800 font-medium text-sm"
             >
-              See {workouts.length - (viewMode === 'grid' ? 6 : 4)} more workouts in this category
+              See {workouts.length - maxDisplay} more workouts in this category
             </button>
           </div>
         )}
@@ -403,15 +296,13 @@ const PremadeWorkouts: React.FC = () => {
     );
   };
 
-  // Get current workouts to display
+  // Get current workouts
   const getCurrentWorkouts = () => {
-    if (activeCategory === 'all') {
-      return allWorkouts;
-    }
-    return categorizedWorkouts[activeCategory] || [];
+    return state.activeCategory === 'all' ? state.allWorkouts : (state.categorizedWorkouts[state.activeCategory] || []);
   };
 
-  if (loading && allWorkouts.length === 0) {
+  // Loading state
+  if (state.loading && state.allWorkouts.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50">
         <div className="flex items-center justify-center min-h-screen">
@@ -426,6 +317,8 @@ const PremadeWorkouts: React.FC = () => {
       </div>
     );
   }
+
+  const activeFiltersCount = Object.keys(filters).filter(key => filters[key as keyof WorkoutFiltersType]).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 relative overflow-hidden">
@@ -454,7 +347,7 @@ const PremadeWorkouts: React.FC = () => {
                     Pre-Made Workouts
                   </h1>
                   <p className="text-sm text-gray-600">
-                    {totalCount > 0 ? `${totalCount} professional workout plans` : 'Discover workout plans'}
+                    {state.totalCount > 0 ? `${state.totalCount} professional workout plans` : 'Discover workout plans'}
                   </p>
                 </div>
               </div>
@@ -465,7 +358,7 @@ const PremadeWorkouts: React.FC = () => {
                   <button
                     onClick={() => handleCategoryFilter('all')}
                     className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      activeCategory === 'all' 
+                      state.activeCategory === 'all' 
                         ? 'bg-blue-600 text-white' 
                         : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
                     }`}
@@ -474,53 +367,46 @@ const PremadeWorkouts: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Refresh Button */}
+                {/* Controls */}
                 <button
                   onClick={handleRefresh}
-                  disabled={loading}
+                  disabled={state.loading}
                   className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200 disabled:opacity-50"
                 >
-                  <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`h-5 w-5 ${state.loading ? 'animate-spin' : ''}`} />
                 </button>
 
                 {/* View Mode Toggle */}
                 <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-2 rounded-md transition-colors duration-200 ${
-                      viewMode === 'grid' 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-blue-600'
-                    }`}
-                  >
-                    <Grid3x3 className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-2 rounded-md transition-colors duration-200 ${
-                      viewMode === 'list' 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-blue-600'
-                    }`}
-                  >
-                    <List className="h-4 w-4" />
-                  </button>
+                  {(['grid', 'list'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => toggleViewMode(mode)}
+                      className={`p-2 rounded-md transition-colors duration-200 ${
+                        state.viewMode === mode 
+                          ? 'bg-white text-blue-600 shadow-sm' 
+                          : 'text-gray-600 hover:text-blue-600'
+                      }`}
+                    >
+                      {mode === 'grid' ? <Grid3x3 className="h-4 w-4" /> : <List className="h-4 w-4" />}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Filter Toggle */}
                 <button
-                  onClick={() => setShowFilters(!showFilters)}
+                  onClick={toggleShowFilters}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                    showFilters 
+                    state.showFilters 
                       ? 'bg-blue-600 text-white shadow-lg' 
                       : 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-50'
                   }`}
                 >
                   <Filter className="h-4 w-4" />
                   <span>Filters</span>
-                  {Object.keys(filters).filter(key => filters[key as keyof WorkoutFiltersType]).length > 0 && (
+                  {activeFiltersCount > 0 && (
                     <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-bold">
-                      {Object.keys(filters).filter(key => filters[key as keyof WorkoutFiltersType]).length}
+                      {activeFiltersCount}
                     </span>
                   )}
                 </button>
@@ -532,7 +418,7 @@ const PremadeWorkouts: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col lg:flex-row gap-8">
             {/* Filters Sidebar */}
-            {showFilters && (
+            {state.showFilters && (
               <div className="lg:w-80 space-y-6">
                 <WorkoutFilters
                   filters={filters}
@@ -546,13 +432,13 @@ const PremadeWorkouts: React.FC = () => {
             {/* Main Content */}
             <div className="flex-1 space-y-8">
               {/* Error State */}
-              {error && (
+              {state.error && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-6">
                   <div className="flex items-center space-x-3">
                     <AlertCircle className="h-6 w-6 text-red-500" />
                     <div>
                       <h3 className="font-medium text-red-800">Error Loading Workouts</h3>
-                      <p className="text-sm text-red-600 mt-1">{error}</p>
+                      <p className="text-sm text-red-600 mt-1">{state.error}</p>
                       <button
                         onClick={handleRefresh}
                         className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
@@ -564,44 +450,41 @@ const PremadeWorkouts: React.FC = () => {
                 </div>
               )}
 
-              {/* Category Sections or Filtered Results */}
-              {activeCategory === 'all' ? (
-                // Show categorized sections
+              {/* Content */}
+              {state.activeCategory === 'all' ? (
                 <div className="space-y-8">
                   {Object.entries(WORKOUT_CATEGORIES).map(([key, category]) => 
                     renderCategorySection(key, category)
                   )}
                 </div>
               ) : (
-                // Show filtered results
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-bold text-gray-900">
-                      {activeCategory === 'all' ? 'All Workouts' : WORKOUT_CATEGORIES[activeCategory as keyof typeof WORKOUT_CATEGORIES]?.title || 'Filtered Results'}
+                      {state.activeCategory === 'all' ? 'All Workouts' : WORKOUT_CATEGORIES[state.activeCategory as keyof typeof WORKOUT_CATEGORIES]?.title || 'Filtered Results'}
                     </h2>
                     <div className="text-sm text-gray-600">
                       {getCurrentWorkouts().length} workouts
                     </div>
                   </div>
 
-                  <div className={`${
-                    viewMode === 'grid' 
-                      ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6' 
-                      : 'space-y-4'
-                  }`}>
+                  <div className={state.viewMode === 'grid' 
+                    ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6' 
+                    : 'space-y-4'
+                  }>
                     {getCurrentWorkouts().map((workout) => (
                       <WorkoutCard
                         key={workout._id}
                         workout={workout}
                         onViewPlan={handleViewPlan}
                         onSavePlan={handleSavePlan}
-                        isSaved={savedWorkouts.has(workout._id)}
-                        className={viewMode === 'list' ? 'max-w-full' : ''}
+                        isSaved={state.savedWorkouts.has(workout._id)}
+                        className={state.viewMode === 'list' ? 'max-w-full' : ''}
                       />
                     ))}
                   </div>
 
-                  {getCurrentWorkouts().length === 0 && !loading && (
+                  {getCurrentWorkouts().length === 0 && !state.loading && (
                     <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
                       <div className="space-y-4">
                         <Search className="h-16 w-16 text-gray-300 mx-auto" />
@@ -624,7 +507,7 @@ const PremadeWorkouts: React.FC = () => {
               )}
 
               {/* Loading More */}
-              {loading && allWorkouts.length > 0 && (
+              {state.loading && state.allWorkouts.length > 0 && (
                 <div className="flex justify-center py-8">
                   <div className="flex items-center space-x-3">
                     <Loader2 className="h-5 w-5 animate-spin text-blue-600" />

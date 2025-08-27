@@ -85,7 +85,8 @@ export interface WorkoutSession {
   isCompleted: boolean;
 }
 
-// Enhanced WorkoutPlan interface (merged from both files)
+// Add these properties to your WorkoutPlan interface in src/types/index.ts
+
 export interface WorkoutPlan {
   _id: string;
   id?: string; // for compatibility
@@ -116,6 +117,10 @@ export interface WorkoutPlan {
   averageRating?: number; // calculated field
   totalExercises?: number; // calculated field
   
+  // ADD THESE MISSING PROPERTIES:
+  equipment?: string; // Add equipment property
+  benefits?: string[]; // Add benefits property
+  
   // Legacy fields for backward compatibility
   targetGoals?: string[];
   
@@ -125,7 +130,6 @@ export interface WorkoutPlan {
   createdAt: string;
   updatedAt: string;
 }
-
 // Workout filtering and querying types
 export interface WorkoutFilters {
   goal?: string;

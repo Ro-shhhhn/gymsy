@@ -1,5 +1,5 @@
 // src/utils/api.ts
-import type { UserPreferences, UserPreferencesResponse, SavePreferencesResponse } from '../types';
+import type { UserPreferences, UserPreferencesResponse, SavePreferencesResponse, WorkoutPlan } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -224,6 +224,75 @@ export const api = {
 
   // Workout endpoints
   workouts: {
+    // Get all premade workouts with filters
+    getPremadeWorkouts: async (params: {
+      page?: number;
+      limit?: number;
+      sortBy?: string;
+      sortOrder?: string;
+      [key: string]: any;
+    } = {}): Promise<{
+      workouts: WorkoutPlan[];
+      pagination: {
+        currentPage: number;
+        totalPages: number;
+        totalCount: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
+    }> => {
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== '') {
+          if (Array.isArray(value)) {
+            value.forEach(v => queryParams.append(key, v.toString()));
+          } else {
+            queryParams.append(key, value.toString());
+          }
+        }
+      });
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/workouts/premade?${queryParams}`,
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+      return handleResponse(response);
+    },
+
+    // Get single workout by ID
+    getWorkoutById: async (workoutId: string): Promise<{
+      workout: WorkoutPlan;
+    }> => {
+      const response = await fetch(
+        `${API_BASE_URL}/api/workouts/premade/${workoutId}`,
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+      return handleResponse(response);
+    },
+
+    // Get filter options
+    getFilterOptions: async (): Promise<{
+      filterOptions: {
+        goals: string[];
+        fitnessLevels: string[];
+        workoutTypes: string[];
+        focusAreas: string[];
+        planDurations: string[];
+      };
+    }> => {
+      const response = await fetch(
+        `${API_BASE_URL}/api/workouts/filter-options`,
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+      return handleResponse(response);
+    },
+
     createWorkoutSession: async (workoutData: {
       workoutName: string;
       workoutType: string;
@@ -269,6 +338,32 @@ export const api = {
     deleteWorkoutSession: async (workoutId: string): Promise<{ message: string }> => {
       const response = await fetch(`${API_BASE_URL}/api/workouts/sessions/${workoutId}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      return handleResponse(response);
+    },
+
+    // Save/bookmark a workout
+    saveWorkout: async (workoutId: string): Promise<{ message: string; isSaved: boolean }> => {
+      const response = await fetch(`${API_BASE_URL}/api/workouts/save/${workoutId}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      return handleResponse(response);
+    },
+
+    // Remove saved workout
+    removeSavedWorkout: async (workoutId: string): Promise<{ message: string }> => {
+      const response = await fetch(`${API_BASE_URL}/api/workouts/save/${workoutId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      return handleResponse(response);
+    },
+
+    // Get user's saved workouts
+    getSavedWorkouts: async (): Promise<{ savedWorkouts: string[] }> => {
+      const response = await fetch(`${API_BASE_URL}/api/workouts/saved`, {
         headers: getAuthHeaders(),
       });
       return handleResponse(response);

@@ -1,4 +1,4 @@
-// server/src/routes/workouts.ts - Enhanced with Progress Tracking
+// server/src/routes/workouts.ts - Refactored
 import express, { Request, Response } from 'express';
 import { query, body, param, validationResult } from 'express-validator';
 import mongoose from 'mongoose';
@@ -8,7 +8,6 @@ import { authenticateToken } from '../middleware/auth';
 
 const router = express.Router();
 
-// Interface for JWT payload (should match your auth middleware)
 interface JWTPayload {
   userId: string;
   email: string;
@@ -17,157 +16,141 @@ interface JWTPayload {
   exp: number;
 }
 
-// Interface for authenticated request
 interface AuthenticatedRequest extends Request {
   user?: JWTPayload;
 }
 
-// Enhanced error response helper
-const sendErrorResponse = (res: Response, statusCode: number, message: string, errors?: any[]) => {
-  const response: any = {
-    success: false,
-    message
-  };
-  
-  if (errors && errors.length > 0) {
-    response.errors = errors;
+// Helper functions
+const sendError = (res: Response, status: number, message: string, errors?: any[]) => 
+  res.status(status).json({ success: false, message, errors });
+
+const formatErrors = (errors: any[]) => 
+  errors.map(e => ({ field: e.path || e.param, message: e.msg, value: e.value }));
+
+const validateRequest = (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    sendError(res, 400, 'Validation failed', formatErrors(errors.array()));
+    return false;
   }
+  return true;
+};
+
+const getUserProgressMap = async (userId: string, workoutIds: any[]) => {
+  if (!userId || !workoutIds.length) return new Map();
   
-  return res.status(statusCode).json(response);
+  const progress = await UserWorkoutProgress.find({
+    userId: new mongoose.Types.ObjectId(userId),
+    workoutId: { $in: workoutIds }
+  }).select('workoutId isStarted isCompleted isBookmarked completionPercentage currentWeek currentDay').lean();
+  
+  const map = new Map();
+  progress.forEach(p => map.set(p.workoutId.toString(), p));
+  return map;
 };
 
-// Format validation errors
-const formatValidationErrors = (errors: any[]): any[] => {
-  return errors.map((error: any) => ({
-    field: error.path || error.param,
-    message: error.msg,
-    value: error.value
-  }));
+const enhanceWorkout = (workout: any, progress?: any) => ({
+  ...workout,
+  averageRating: workout.totalRatings > 0 ? Math.round((workout.rating / workout.totalRatings) * 10) / 10 : 0,
+  totalExercises: workout.exercises?.length || 0,
+  userProgress: progress ? {
+    isStarted: progress.isStarted,
+    isCompleted: progress.isCompleted,
+    isBookmarked: progress.isBookmarked,
+    completionPercentage: progress.completionPercentage,
+    currentWeek: progress.currentWeek,
+    currentDay: progress.currentDay
+  } : null
+});
+
+const findOrCreateProgress = async (userId: string, workoutId: string, workout?: any) => {
+  let progress = await UserWorkoutProgress.findOne({
+    userId: new mongoose.Types.ObjectId(userId),
+    workoutId: new mongoose.Types.ObjectId(workoutId)
+  });
+
+  if (!progress && workout) {
+    const totalWeeks = parseInt(workout.planDuration.split(' ')[0]) || 4;
+    progress = new UserWorkoutProgress({
+      userId: new mongoose.Types.ObjectId(userId),
+      workoutId: new mongoose.Types.ObjectId(workoutId),
+      totalWeeks,
+      totalDaysPerWeek: workout.workoutsPerWeek,
+      currentWeek: 1,
+      currentDay: 1
+    });
+    await progress.save();
+  }
+  return progress;
 };
 
-// Validation rules for workout queries
+// Validations
 const workoutQueryValidation = [
-  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
   query('goal').optional().isIn(['Fat Loss', 'Muscle Gain', 'Strength', 'Endurance', 'Flexibility', 'General Fitness']),
   query('fitnessLevel').optional().isIn(['Beginner', 'Intermediate', 'Advanced']),
   query('workoutType').optional().isIn(['Home', 'Gym', 'No Equipment', 'Dumbbells/Bands Only']),
   query('planDuration').optional().isIn(['2 weeks', '4 weeks', '6 weeks', '8+ weeks']),
-  query('minDuration').optional().isInt({ min: 10 }).withMessage('Minimum duration must be at least 10 minutes'),
-  query('maxDuration').optional().isInt({ max: 120 }).withMessage('Maximum duration must be at most 120 minutes'),
+  query('minDuration').optional().isInt({ min: 10 }),
+  query('maxDuration').optional().isInt({ max: 120 }),
   query('sortBy').optional().isIn(['createdAt', 'rating', 'duration', 'title', 'difficulty']),
-  query('sortOrder').optional().isIn(['asc', 'desc']),
+  query('sortOrder').optional().isIn(['asc', 'desc'])
 ];
 
-// Get all published workouts with filtering and pagination
+const completeWorkoutValidation = [
+  param('id').isMongoId(),
+  body('week').isInt({ min: 1 }),
+  body('day').isInt({ min: 1, max: 7 }),
+  body('duration').isInt({ min: 1 }),
+  body('difficulty').isIn(['Easy', 'Medium', 'Hard']),
+  body('caloriesBurned').optional().isInt({ min: 0 }),
+  body('notes').optional().isLength({ max: 500 }),
+  body('sessionId').optional().isString()
+];
+
+// Routes
 router.get('/premade', authenticateToken, workoutQueryValidation, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return sendErrorResponse(res, 400, 'Invalid query parameters', formatValidationErrors(errors.array()));
-    }
+    if (!validateRequest(req, res)) return;
 
     const {
-      page = '1',
-      limit = '12',
-      goal,
-      fitnessLevel,
-      workoutType,
-      focusAreas,
-      planDuration,
-      minDuration,
-      maxDuration,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-      search,
-      featured
+      page = '1', limit = '12', goal, fitnessLevel, workoutType, focusAreas,
+      planDuration, minDuration, maxDuration, sortBy = 'createdAt',
+      sortOrder = 'desc', search, featured
     } = req.query as any;
 
     // Build query
     const query: any = { isPublished: true };
-
-    // Add filters
     if (goal) query.goal = goal;
     if (fitnessLevel) query.fitnessLevel = fitnessLevel;
     if (workoutType) query.workoutType = workoutType;
     if (planDuration) query.planDuration = planDuration;
     if (featured === 'true') query.isFeatured = true;
-
-    // Focus areas filter
-    if (focusAreas) {
-      const areas = Array.isArray(focusAreas) ? focusAreas : focusAreas.split(',');
-      query.focusAreas = { $in: areas };
-    }
-
-    // Duration range filter
+    if (focusAreas) query.focusAreas = { $in: Array.isArray(focusAreas) ? focusAreas : focusAreas.split(',') };
     if (minDuration || maxDuration) {
       query.duration = {};
       if (minDuration) query.duration.$gte = parseInt(minDuration);
       if (maxDuration) query.duration.$lte = parseInt(maxDuration);
     }
+    if (search) query.$text = { $search: search };
 
-    // Text search
-    if (search) {
-      query.$text = { $search: search };
-    }
-
-    // Build sort object
-    const sort: any = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-    if (sortBy === 'rating') {
-      sort.totalRatings = -1;
-    }
+    // Build sort
+    const sort: any = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+    if (sortBy === 'rating') sort.totalRatings = -1;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // Execute query
     const [workouts, totalCount] = await Promise.all([
-      Workout.find(query)
-        .sort(sort)
-        .skip(skip)
-        .limit(limitNum)
-        .select('-exercises.instructions -__v')
-        .lean(),
+      Workout.find(query).sort(sort).skip(skip).limit(limitNum)
+        .select('-exercises.instructions -__v').lean(),
       Workout.countDocuments(query)
     ]);
 
-    // Get user's progress for these workouts
-    const userId = req.user?.userId;
-    let userProgressMap: Map<string, any> = new Map();
-    
-    if (userId && workouts.length > 0) {
-      const workoutIds = workouts.map(w => w._id);
-      const userProgress = await UserWorkoutProgress.find({
-        userId: new mongoose.Types.ObjectId(userId),
-        workoutId: { $in: workoutIds }
-      }).select('workoutId isStarted isCompleted isBookmarked completionPercentage currentWeek currentDay').lean();
-      
-      userProgress.forEach(progress => {
-        userProgressMap.set(progress.workoutId.toString(), progress);
-      });
-    }
-
-    // Enhance workouts with user progress
-    const workoutsWithProgress = workouts.map((workout: any) => {
-      const progress = userProgressMap.get(workout._id.toString());
-      return {
-        ...workout,
-        averageRating: workout.totalRatings > 0 ? Math.round((workout.rating / workout.totalRatings) * 10) / 10 : 0,
-        totalExercises: workout.exercises?.length || 0,
-        userProgress: progress ? {
-          isStarted: progress.isStarted,
-          isCompleted: progress.isCompleted,
-          isBookmarked: progress.isBookmarked,
-          completionPercentage: progress.completionPercentage,
-          currentWeek: progress.currentWeek,
-          currentDay: progress.currentDay
-        } : null
-      };
-    });
-
-    const totalPages = Math.ceil(totalCount / limitNum);
+    const progressMap = await getUserProgressMap(req.user?.userId!, workouts.map(w => w._id));
+    const workoutsWithProgress = workouts.map(w => enhanceWorkout(w, progressMap.get(w._id.toString())));
 
     res.json({
       success: true,
@@ -175,92 +158,48 @@ router.get('/premade', authenticateToken, workoutQueryValidation, async (req: Au
         workouts: workoutsWithProgress,
         pagination: {
           currentPage: pageNum,
-          totalPages,
+          totalPages: Math.ceil(totalCount / limitNum),
           totalCount,
           limit: limitNum,
-          hasNext: pageNum < totalPages,
+          hasNext: pageNum < Math.ceil(totalCount / limitNum),
           hasPrev: pageNum > 1
         },
-        filters: {
-          goal, fitnessLevel, workoutType, focusAreas,
-          planDuration, minDuration, maxDuration, search, featured
-        }
+        filters: { goal, fitnessLevel, workoutType, focusAreas, planDuration, minDuration, maxDuration, search, featured }
       }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get workouts error:', error);
-    return sendErrorResponse(res, 500, 'Failed to fetch workouts');
+    sendError(res, 500, 'Failed to fetch workouts');
   }
 });
 
-// Get single workout by ID with complete details and user progress
 router.get('/premade/:id', authenticateToken, param('id').isMongoId(), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return sendErrorResponse(res, 400, 'Invalid workout ID', formatValidationErrors(errors.array()));
-    }
+    if (!validateRequest(req, res)) return;
 
     const { id } = req.params;
     const userId = req.user?.userId;
 
-    // Find workout by ID
     const workout = await Workout.findById(id).lean();
-
     if (!workout || !workout.isPublished) {
-      return sendErrorResponse(res, 404, 'Workout plan not found');
+      return sendError(res, 404, 'Workout plan not found');
     }
 
-    // Get user's progress for this workout
     let userProgress = null;
     if (userId) {
-      userProgress = await UserWorkoutProgress.findOne({
-        userId: new mongoose.Types.ObjectId(userId),
-        workoutId: new mongoose.Types.ObjectId(id)
-      }).lean();
-
-      // Create progress entry if it doesn't exist
-      if (!userProgress) {
-        const totalWeeks = parseInt(workout.planDuration.split(' ')[0]) || 4;
-        userProgress = new UserWorkoutProgress({
-          userId: new mongoose.Types.ObjectId(userId),
-          workoutId: new mongoose.Types.ObjectId(id),
-          totalWeeks,
-          totalDaysPerWeek: workout.workoutsPerWeek,
-          currentWeek: 1,
-          currentDay: 1
-        });
-        await userProgress.save();
-        userProgress = userProgress.toObject();
-      }
+      userProgress = await findOrCreateProgress(userId, id, workout);
     }
 
-    // Transform workout data
     const workoutData = {
       ...workout,
       averageRating: workout.totalRatings > 0 ? Math.round((workout.rating / workout.totalRatings) * 10) / 10 : 0,
       totalExercises: workout.exercises?.length || 0,
-      estimatedCompletionTime: (() => {
-        const exerciseTime = workout.exercises?.reduce((total: number, exercise: any) => {
-          const exerciseDuration = exercise.duration || (exercise.reps ? exercise.reps * 3 : 0);
-          return total + (exerciseDuration * exercise.sets) + (exercise.restTime * (exercise.sets - 1));
-        }, 0) || 0;
-        return Math.ceil(exerciseTime / 60);
-      })(),
+      estimatedCompletionTime: Math.ceil((workout.exercises?.reduce((total: number, ex: any) => {
+        const exerciseTime = ex.duration || (ex.reps ? ex.reps * 3 : 0);
+        return total + (exerciseTime * ex.sets) + (ex.restTime * (ex.sets - 1));
+      }, 0) || 0) / 60),
       userProgress: userProgress ? {
-        isStarted: userProgress.isStarted,
-        isCompleted: userProgress.isCompleted,
-        isBookmarked: userProgress.isBookmarked,
-        completionPercentage: userProgress.completionPercentage || 0,
-        currentWeek: userProgress.currentWeek,
-        currentDay: userProgress.currentDay,
-        totalCompletedDays: userProgress.totalCompletedDays,
-        consecutiveDays: userProgress.consecutiveDays,
-        currentStreak: userProgress.currentStreak,
-        completedDays: userProgress.completedDays || [],
-        completedWeeks: userProgress.completedWeeks || [],
-        lastWorkoutDate: userProgress.lastWorkoutDate,
+        ...userProgress.toObject(),
         totalTimeSpent: userProgress.totalTimeSpent || 0,
         totalCaloriesBurned: userProgress.totalCaloriesBurned || 0
       } : null
@@ -269,30 +208,22 @@ router.get('/premade/:id', authenticateToken, param('id').isMongoId(), async (re
     res.json({
       success: true,
       message: 'Workout details retrieved successfully',
-      data: {
-        workout: workoutData
-      }
+      data: { workout: workoutData }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get workout details error:', error);
-    return sendErrorResponse(res, 500, 'Failed to retrieve workout details');
+    sendError(res, 500, 'Failed to retrieve workout details');
   }
 });
 
-// Get related workout plans
 router.get('/premade/:id/related', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const limit = parseInt(req.query.limit as string) || 6;
-    const userId = req.user?.userId;
 
     const currentWorkout = await Workout.findById(id);
-    if (!currentWorkout) {
-      return sendErrorResponse(res, 404, 'Workout not found');
-    }
+    if (!currentWorkout) return sendError(res, 404, 'Workout not found');
 
-    // Find related workouts
     const relatedWorkouts = await Workout.find({
       _id: { $ne: id },
       isPublished: true,
@@ -300,127 +231,58 @@ router.get('/premade/:id/related', authenticateToken, async (req: AuthenticatedR
         { goal: currentWorkout.goal },
         { fitnessLevel: currentWorkout.fitnessLevel },
         { workoutType: currentWorkout.workoutType },
-        { focusAreas: { $in: currentWorkout.focusAreas } },
-        { category: currentWorkout.category }
+        { focusAreas: { $in: currentWorkout.focusAreas } }
       ]
     })
-    .sort({ rating: -1, totalRatings: -1 })
-    .limit(limit)
-    .select('title shortDescription goal fitnessLevel duration workoutType caloriesBurnEstimate planDuration imageUrl thumbnailUrl rating totalRatings isFeatured')
+    .sort({ rating: -1, totalRatings: -1 }).limit(limit)
+    .select('title shortDescription goal fitnessLevel duration workoutType caloriesBurnEstimate planDuration imageUrl rating totalRatings isFeatured')
     .lean();
 
-    // Get user progress for related workouts
-    let userProgressMap: Map<string, any> = new Map();
-    if (userId && relatedWorkouts.length > 0) {
-      const workoutIds = relatedWorkouts.map(w => w._id);
-      const userProgress = await UserWorkoutProgress.find({
-        userId: new mongoose.Types.ObjectId(userId),
-        workoutId: { $in: workoutIds }
-      }).select('workoutId isStarted isCompleted isBookmarked').lean();
-      
-      userProgress.forEach(progress => {
-        userProgressMap.set(progress.workoutId.toString(), progress);
-      });
-    }
-
-    // Enhance related workouts
-    const relatedWorkoutsWithProgress = relatedWorkouts.map((workout: any) => {
-      const progress = userProgressMap.get(workout._id.toString());
-      return {
-        ...workout,
-        averageRating: workout.totalRatings > 0 ? Math.round((workout.rating / workout.totalRatings) * 10) / 10 : 0,
-        userProgress: progress ? {
-          isStarted: progress.isStarted,
-          isCompleted: progress.isCompleted,
-          isBookmarked: progress.isBookmarked
-        } : null
-      };
-    });
+    const progressMap = await getUserProgressMap(req.user?.userId!, relatedWorkouts.map(w => w._id));
+    const workoutsWithProgress = relatedWorkouts.map(w => enhanceWorkout(w, progressMap.get(w._id.toString())));
 
     res.json({
       success: true,
       message: 'Related workouts retrieved successfully',
-      data: {
-        relatedWorkouts: relatedWorkoutsWithProgress,
-        count: relatedWorkoutsWithProgress.length
-      }
+      data: { relatedWorkouts: workoutsWithProgress, count: workoutsWithProgress.length }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get related workouts error:', error);
-    return sendErrorResponse(res, 500, 'Failed to retrieve related workouts');
+    sendError(res, 500, 'Failed to retrieve related workouts');
   }
 });
 
-// POST bookmark/save workout plan
 router.post('/premade/:id/bookmark', authenticateToken, param('id').isMongoId(), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return sendErrorResponse(res, 400, 'Invalid workout ID', formatValidationErrors(errors.array()));
-    }
+    if (!validateRequest(req, res)) return;
 
     const { id } = req.params;
-    const userId = req.user?.userId!;
-
-    // Validate workout exists
     const workout = await Workout.findById(id);
-    if (!workout || !workout.isPublished) {
-      return sendErrorResponse(res, 404, 'Workout not found');
-    }
+    if (!workout?.isPublished) return sendError(res, 404, 'Workout not found');
 
-    // Find or create user progress
-    let userProgress = await UserWorkoutProgress.findOne({
-      userId: new mongoose.Types.ObjectId(userId),
-      workoutId: new mongoose.Types.ObjectId(id)
-    });
+    const userProgress = await findOrCreateProgress(req.user!.userId, id, workout);
+    userProgress!.isBookmarked = true;
+    userProgress!.bookmarkedAt = new Date();
+    await userProgress!.save();
 
-    if (!userProgress) {
-      const totalWeeks = parseInt(workout.planDuration.split(' ')[0]) || 4;
-      userProgress = new UserWorkoutProgress({
-        userId: new mongoose.Types.ObjectId(userId),
-        workoutId: new mongoose.Types.ObjectId(id),
-        totalWeeks,
-        totalDaysPerWeek: workout.workoutsPerWeek,
-        currentWeek: 1,
-        currentDay: 1
-      });
-    }
-
-    // Toggle bookmark
-    userProgress.isBookmarked = true;
-    userProgress.bookmarkedAt = new Date();
-    await userProgress.save();
-    
     res.json({
       success: true,
       message: 'Workout bookmarked successfully',
-      data: {
-        workoutId: id,
-        isBookmarked: true
-      }
+      data: { workoutId: id, isBookmarked: true }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Bookmark workout error:', error);
-    return sendErrorResponse(res, 500, 'Failed to bookmark workout');
+    sendError(res, 500, 'Failed to bookmark workout');
   }
 });
 
-// DELETE remove bookmark from workout plan
 router.delete('/premade/:id/bookmark', authenticateToken, param('id').isMongoId(), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return sendErrorResponse(res, 400, 'Invalid workout ID', formatValidationErrors(errors.array()));
-    }
+    if (!validateRequest(req, res)) return;
 
     const { id } = req.params;
-    const userId = req.user?.userId!;
-
-    // Find user progress
     const userProgress = await UserWorkoutProgress.findOne({
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: new mongoose.Types.ObjectId(req.user!.userId),
       workoutId: new mongoose.Types.ObjectId(id)
     });
 
@@ -429,77 +291,43 @@ router.delete('/premade/:id/bookmark', authenticateToken, param('id').isMongoId(
       userProgress.bookmarkedAt = undefined;
       await userProgress.save();
     }
-    
+
     res.json({
       success: true,
       message: 'Workout bookmark removed successfully',
-      data: {
-        workoutId: id,
-        isBookmarked: false
-      }
+      data: { workoutId: id, isBookmarked: false }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Remove bookmark error:', error);
-    return sendErrorResponse(res, 500, 'Failed to remove bookmark');
+    sendError(res, 500, 'Failed to remove bookmark');
   }
 });
 
-// POST start workout session
 router.post('/premade/:id/start', authenticateToken, param('id').isMongoId(), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return sendErrorResponse(res, 400, 'Invalid workout ID', formatValidationErrors(errors.array()));
-    }
+    if (!validateRequest(req, res)) return;
 
     const { id } = req.params;
-    const userId = req.user?.userId!;
-
-    // Validate workout exists
     const workout = await Workout.findById(id);
-    if (!workout || !workout.isPublished) {
-      return sendErrorResponse(res, 404, 'Workout not found');
+    if (!workout?.isPublished) return sendError(res, 404, 'Workout not found');
+
+    const userProgress = await findOrCreateProgress(req.user!.userId, id, workout);
+    if (!userProgress!.isStarted) {
+      userProgress!.isStarted = true;
+      userProgress!.startedAt = new Date();
     }
+    userProgress!.lastAccessedAt = new Date();
+    await userProgress!.save();
 
-    // Find or create user progress
-    let userProgress = await UserWorkoutProgress.findOne({
-      userId: new mongoose.Types.ObjectId(userId),
-      workoutId: new mongoose.Types.ObjectId(id)
-    });
-
-    if (!userProgress) {
-      const totalWeeks = parseInt(workout.planDuration.split(' ')[0]) || 4;
-      userProgress = new UserWorkoutProgress({
-        userId: new mongoose.Types.ObjectId(userId),
-        workoutId: new mongoose.Types.ObjectId(id),
-        totalWeeks,
-        totalDaysPerWeek: workout.workoutsPerWeek,
-        currentWeek: 1,
-        currentDay: 1
-      });
-    }
-
-    // Mark as started and update last accessed
-    if (!userProgress.isStarted) {
-      userProgress.isStarted = true;
-      userProgress.startedAt = new Date();
-    }
-    userProgress.lastAccessedAt = new Date();
-    await userProgress.save();
-
-    // Generate session ID
-    const sessionId = new mongoose.Types.ObjectId().toString();
-    
     res.json({
       success: true,
       message: 'Workout session started successfully',
       data: {
-        sessionId: sessionId,
+        sessionId: new mongoose.Types.ObjectId().toString(),
         workoutId: id,
         startedAt: new Date().toISOString(),
-        currentWeek: userProgress.currentWeek,
-        currentDay: userProgress.currentDay,
+        currentWeek: userProgress!.currentWeek,
+        currentDay: userProgress!.currentDay,
         workout: {
           title: workout.title,
           exercises: workout.exercises,
@@ -508,179 +336,132 @@ router.post('/premade/:id/start', authenticateToken, param('id').isMongoId(), as
         }
       }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Start workout session error:', error);
-    return sendErrorResponse(res, 500, 'Failed to start workout session');
+    sendError(res, 500, 'Failed to start workout session');
   }
 });
 
-// POST complete workout day
-router.post('/premade/:id/complete-day', 
-  authenticateToken,
-  param('id').isMongoId(),
-  [
-    body('week').isInt({ min: 1 }).withMessage('Week must be a positive integer'),
-    body('day').isInt({ min: 1, max: 7 }).withMessage('Day must be between 1 and 7'),
-    body('duration').isInt({ min: 1 }).withMessage('Duration must be a positive integer'),
-    body('difficulty').isIn(['Easy', 'Medium', 'Hard']).withMessage('Difficulty must be Easy, Medium, or Hard'),
-    body('caloriesBurned').optional().isInt({ min: 0 }).withMessage('Calories burned must be a non-negative integer'),
-    body('notes').optional().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less'),
-    body('sessionId').optional().isString().withMessage('Session ID must be a string')
-  ],
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return sendErrorResponse(res, 400, 'Invalid request data', formatValidationErrors(errors.array()));
-      }
+router.post('/premade/:id/complete-day', authenticateToken, completeWorkoutValidation, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!validateRequest(req, res)) return;
 
-      const { id } = req.params;
-      const { week, day, duration, difficulty, caloriesBurned, notes, sessionId } = req.body;
-      const userId = req.user?.userId!;
+    const { id } = req.params;
+    const { week, day, duration, difficulty, caloriesBurned, notes, sessionId } = req.body;
 
-      // Find user progress
-      const userProgress = await UserWorkoutProgress.findOne({
-        userId: new mongoose.Types.ObjectId(userId),
-        workoutId: new mongoose.Types.ObjectId(id)
-      });
+    const userProgress = await UserWorkoutProgress.findOne({
+      userId: new mongoose.Types.ObjectId(req.user!.userId),
+      workoutId: new mongoose.Types.ObjectId(id)
+    });
 
-      if (!userProgress) {
-        return sendErrorResponse(res, 404, 'Workout progress not found. Please start the workout first.');
-      }
-
-      try {
-        await userProgress.completeDay(week, day, duration, difficulty, caloriesBurned, notes, sessionId);
-        
-        res.json({
-          success: true,
-          message: 'Workout day completed successfully',
-          data: {
-            workoutId: id,
-            week,
-            day,
-            completionPercentage: userProgress.completionPercentage,
-            currentStreak: userProgress.currentStreak,
-            totalCompletedDays: userProgress.totalCompletedDays,
-            isWorkoutCompleted: userProgress.isCompleted
-          }
-        });
-      } catch (error: any) {
-        return sendErrorResponse(res, 400, error.message);
-      }
-
-    } catch (error: any) {
-      console.error('Complete workout day error:', error);
-      return sendErrorResponse(res, 500, 'Failed to complete workout day');
+    if (!userProgress) {
+      return sendError(res, 404, 'Workout progress not found. Please start the workout first.');
     }
-  }
-);
 
-// POST rate workout
-router.post('/premade/:id/rate',
-  authenticateToken,
-  param('id').isMongoId(),
-  [
-    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
-    body('review').optional().isLength({ max: 1000 }).withMessage('Review must be 1000 characters or less')
-  ],
-  async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return sendErrorResponse(res, 400, 'Invalid request data', formatValidationErrors(errors.array()));
-      }
-
-      const { id } = req.params;
-      const { rating, review } = req.body;
-      const userId = req.user?.userId!;
-
-      // Find user progress
-      const userProgress = await UserWorkoutProgress.findOne({
-        userId: new mongoose.Types.ObjectId(userId),
-        workoutId: new mongoose.Types.ObjectId(id)
-      });
-
-      if (!userProgress) {
-        return sendErrorResponse(res, 404, 'You must start this workout before rating it');
-      }
-
-      // Rate the workout
-      await userProgress.rateWorkout(rating, review);
-
-      // Update workout's rating statistics
-      const workout = await Workout.findById(id);
-      if (workout) {
-        // Recalculate workout rating based on all user ratings
-        const allRatings = await UserWorkoutProgress.find({
-          workoutId: new mongoose.Types.ObjectId(id),
-          userRating: { $exists: true, $ne: null }
-        }).select('userRating');
-
-        if (allRatings.length > 0) {
-          const totalRating = allRatings.reduce((sum, prog) => sum + (prog.userRating || 0), 0);
-          workout.rating = totalRating;
-          workout.totalRatings = allRatings.length;
-          await workout.save();
-        }
-      }
-
+      await userProgress.completeDay(week, day, duration, difficulty, caloriesBurned, notes, sessionId);
+      
       res.json({
         success: true,
-        message: 'Workout rated successfully',
+        message: 'Workout day completed successfully',
         data: {
           workoutId: id,
-          rating,
-          review
+          week,
+          day,
+          completionPercentage: userProgress.completionPercentage,
+          currentStreak: userProgress.currentStreak,
+          totalCompletedDays: userProgress.totalCompletedDays,
+          isWorkoutCompleted: userProgress.isCompleted
         }
       });
-
     } catch (error: any) {
-      console.error('Rate workout error:', error);
-      return sendErrorResponse(res, 500, 'Failed to rate workout');
+      return sendError(res, 400, error.message);
     }
+  } catch (error) {
+    console.error('Complete workout day error:', error);
+    sendError(res, 500, 'Failed to complete workout day');
   }
-);
+});
 
-// GET user's bookmarked workouts
+router.post('/premade/:id/rate', authenticateToken, [
+  param('id').isMongoId(),
+  body('rating').isInt({ min: 1, max: 5 }),
+  body('review').optional().isLength({ max: 1000 })
+], async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!validateRequest(req, res)) return;
+
+    const { id } = req.params;
+    const { rating, review } = req.body;
+
+    const userProgress = await UserWorkoutProgress.findOne({
+      userId: new mongoose.Types.ObjectId(req.user!.userId),
+      workoutId: new mongoose.Types.ObjectId(id)
+    });
+
+    if (!userProgress) {
+      return sendError(res, 404, 'You must start this workout before rating it');
+    }
+
+    await userProgress.rateWorkout(rating, review);
+
+    // Update workout rating
+    const allRatings = await UserWorkoutProgress.find({
+      workoutId: new mongoose.Types.ObjectId(id),
+      userRating: { $exists: true, $ne: null }
+    }).select('userRating');
+
+    if (allRatings.length > 0) {
+      const totalRating = allRatings.reduce((sum, prog) => sum + (prog.userRating || 0), 0);
+      await Workout.findByIdAndUpdate(id, {
+        rating: totalRating,
+        totalRatings: allRatings.length
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Workout rated successfully',
+      data: { workoutId: id, rating, review }
+    });
+  } catch (error) {
+    console.error('Rate workout error:', error);
+    sendError(res, 500, 'Failed to rate workout');
+  }
+});
+
 router.get('/bookmarks', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.userId!;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
 
-    // Get bookmarked workouts with workout details
     const bookmarkedWorkouts = await UserWorkoutProgress.find({
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: new mongoose.Types.ObjectId(req.user!.userId),
       isBookmarked: true
     })
     .populate({
       path: 'workoutId',
       match: { isPublished: true },
-      select: 'title shortDescription goal fitnessLevel duration workoutType caloriesBurnEstimate planDuration imageUrl thumbnailUrl rating totalRatings isFeatured'
+      select: 'title shortDescription goal fitnessLevel duration workoutType caloriesBurnEstimate planDuration imageUrl rating totalRatings isFeatured'
     })
-    .sort({ bookmarkedAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .lean();
+    .sort({ bookmarkedAt: -1 }).skip(skip).limit(limit).lean();
 
-    // Filter out any bookmarks where workout was not found or unpublished
     const validBookmarks = bookmarkedWorkouts
-      .filter(bookmark => bookmark.workoutId)
-      .map(bookmark => ({
-        ...bookmark.workoutId,
+      .filter(b => b.workoutId)
+      .map(b => ({
+        ...b.workoutId,
         userProgress: {
-          isStarted: bookmark.isStarted,
-          isCompleted: bookmark.isCompleted,
-          isBookmarked: bookmark.isBookmarked,
-          completionPercentage: bookmark.completionPercentage,
-          bookmarkedAt: bookmark.bookmarkedAt
+          isStarted: b.isStarted,
+          isCompleted: b.isCompleted,
+          isBookmarked: b.isBookmarked,
+          completionPercentage: b.completionPercentage,
+          bookmarkedAt: b.bookmarkedAt
         }
       }));
 
     const totalCount = await UserWorkoutProgress.countDocuments({
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: new mongoose.Types.ObjectId(req.user!.userId),
       isBookmarked: true
     });
 
@@ -699,91 +480,64 @@ router.get('/bookmarks', authenticateToken, async (req: AuthenticatedRequest, re
         }
       }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get bookmarks error:', error);
-    return sendErrorResponse(res, 500, 'Failed to retrieve bookmarked workouts');
+    sendError(res, 500, 'Failed to retrieve bookmarked workouts');
   }
 });
 
-// GET user's workout progress overview
 router.get('/progress/overview', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.userId!;
-
-    // Get user overview stats
-    const overviewStats = await UserWorkoutProgress.getUserOverview(userId);
+    const overviewStats = await UserWorkoutProgress.getUserOverview(req.user!.userId);
     const stats = overviewStats[0] || {
-      totalWorkouts: 0,
-      startedWorkouts: 0,
-      completedWorkouts: 0,
-      bookmarkedWorkouts: 0,
-      totalTimeSpent: 0,
-      totalCaloriesBurned: 0,
-      totalCompletedDays: 0,
-      averageRating: 0,
-      longestStreak: 0
+      totalWorkouts: 0, startedWorkouts: 0, completedWorkouts: 0, bookmarkedWorkouts: 0,
+      totalTimeSpent: 0, totalCaloriesBurned: 0, totalCompletedDays: 0,
+      averageRating: 0, longestStreak: 0
     };
 
-    // Get recent workout activity
     const recentActivity = await UserWorkoutProgress.find({
-      userId: new mongoose.Types.ObjectId(userId),
+      userId: new mongoose.Types.ObjectId(req.user!.userId),
       isStarted: true
     })
-    .populate({
-      path: 'workoutId',
-      select: 'title imageUrl thumbnailUrl'
-    })
-    .sort({ lastAccessedAt: -1 })
-    .limit(5)
-    .select('workoutId completionPercentage currentWeek currentDay lastAccessedAt isCompleted')
-    .lean();
+    .populate({ path: 'workoutId', select: 'title imageUrl' })
+    .sort({ lastAccessedAt: -1 }).limit(5)
+    .select('workoutId completionPercentage currentWeek currentDay lastAccessedAt isCompleted').lean();
 
     res.json({
       success: true,
       message: 'User progress overview retrieved successfully',
       data: {
         stats,
-        recentActivity: recentActivity.map(activity => ({
-          workout: activity.workoutId,
-          completionPercentage: activity.completionPercentage,
-          currentWeek: activity.currentWeek,
-          currentDay: activity.currentDay,
-          lastAccessedAt: activity.lastAccessedAt,
-          isCompleted: activity.isCompleted
+        recentActivity: recentActivity.map(a => ({
+          workout: a.workoutId,
+          completionPercentage: a.completionPercentage,
+          currentWeek: a.currentWeek,
+          currentDay: a.currentDay,
+          lastAccessedAt: a.lastAccessedAt,
+          isCompleted: a.isCompleted
         }))
       }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get progress overview error:', error);
-    return sendErrorResponse(res, 500, 'Failed to retrieve progress overview');
+    sendError(res, 500, 'Failed to retrieve progress overview');
   }
 });
 
-// GET user's progress for specific workout
 router.get('/premade/:id/progress', authenticateToken, param('id').isMongoId(), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return sendErrorResponse(res, 400, 'Invalid workout ID', formatValidationErrors(errors.array()));
-    }
-
-    const { id } = req.params;
-    const userId = req.user?.userId!;
+    if (!validateRequest(req, res)) return;
 
     const userProgress = await UserWorkoutProgress.findOne({
-      userId: new mongoose.Types.ObjectId(userId),
-      workoutId: new mongoose.Types.ObjectId(id)
+      userId: new mongoose.Types.ObjectId(req.user!.userId),
+      workoutId: new mongoose.Types.ObjectId(req.params.id)
     }).lean();
 
     if (!userProgress) {
       return res.json({
         success: true,
         message: 'No progress found for this workout',
-        data: {
-          hasProgress: false
-        }
+        data: { hasProgress: false }
       });
     }
 
@@ -792,37 +546,15 @@ router.get('/premade/:id/progress', authenticateToken, param('id').isMongoId(), 
       message: 'Workout progress retrieved successfully',
       data: {
         hasProgress: true,
-        progress: {
-          isStarted: userProgress.isStarted,
-          isCompleted: userProgress.isCompleted,
-          completionPercentage: userProgress.completionPercentage,
-          currentWeek: userProgress.currentWeek,
-          currentDay: userProgress.currentDay,
-          totalCompletedDays: userProgress.totalCompletedDays,
-          consecutiveDays: userProgress.consecutiveDays,
-          currentStreak: userProgress.currentStreak,
-          longestStreak: userProgress.longestStreak,
-          totalTimeSpent: userProgress.totalTimeSpent,
-          totalCaloriesBurned: userProgress.totalCaloriesBurned,
-          completedDays: userProgress.completedDays,
-          completedWeeks: userProgress.completedWeeks,
-          isBookmarked: userProgress.isBookmarked,
-          userRating: userProgress.userRating,
-          userReview: userProgress.userReview,
-          startedAt: userProgress.startedAt,
-          completedAt: userProgress.completedAt,
-          lastAccessedAt: userProgress.lastAccessedAt
-        }
+        progress: userProgress
       }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get workout progress error:', error);
-    return sendErrorResponse(res, 500, 'Failed to retrieve workout progress');
+    sendError(res, 500, 'Failed to retrieve workout progress');
   }
 });
 
-// GET workout filter options
 router.get('/filter-options', authenticateToken, async (req: Request, res: Response) => {
   try {
     const filterOptions = await Workout.aggregate([
@@ -841,11 +573,7 @@ router.get('/filter-options', authenticateToken, async (req: Request, res: Respo
       {
         $project: {
           _id: 0,
-          goals: 1,
-          fitnessLevels: 1,
-          workoutTypes: 1,
-          planDurations: 1,
-          categories: 1,
+          goals: 1, fitnessLevels: 1, workoutTypes: 1, planDurations: 1, categories: 1,
           focusAreas: {
             $reduce: {
               input: '$allFocusAreas',
@@ -858,42 +586,23 @@ router.get('/filter-options', authenticateToken, async (req: Request, res: Respo
     ]);
 
     const options = filterOptions[0] || {
-      goals: [],
-      fitnessLevels: [],
-      workoutTypes: [],
-      focusAreas: [],
-      planDurations: [],
-      categories: []
+      goals: [], fitnessLevels: [], workoutTypes: [], focusAreas: [], planDurations: [], categories: []
     };
 
-    res.json({
-      success: true,
-      data: {
-        filterOptions: options
-      }
-    });
-
-  } catch (error: any) {
+    res.json({ success: true, data: { filterOptions: options } });
+  } catch (error) {
     console.error('Get filter options error:', error);
-    return sendErrorResponse(res, 500, 'Failed to fetch filter options');
+    sendError(res, 500, 'Failed to fetch filter options');
   }
 });
 
-// GET search workouts with suggestions
 router.get('/search', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { q, limit = '5' } = req.query;
 
     if (!q || typeof q !== 'string' || q.length < 2) {
-      return res.json({
-        success: true,
-        data: {
-          suggestions: []
-        }
-      });
+      return res.json({ success: true, data: { suggestions: [] } });
     }
-
-    const limitNum = Math.min(parseInt(limit as string) || 5, 10);
 
     const suggestions = await Workout.find({
       isPublished: true,
@@ -904,25 +613,20 @@ router.get('/search', authenticateToken, async (req: Request, res: Response) => 
       ]
     })
     .select('title goal fitnessLevel focusAreas')
-    .limit(limitNum)
+    .limit(Math.min(parseInt(limit as string) || 5, 10))
     .lean();
 
     res.json({
       success: true,
       data: {
-        suggestions: suggestions.map(workout => ({
-          id: workout._id,
-          title: workout.title,
-          goal: workout.goal,
-          fitnessLevel: workout.fitnessLevel,
-          focusAreas: workout.focusAreas
+        suggestions: suggestions.map(w => ({
+          id: w._id, title: w.title, goal: w.goal, fitnessLevel: w.fitnessLevel, focusAreas: w.focusAreas
         }))
       }
     });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error('Search workouts error:', error);
-    return sendErrorResponse(res, 500, 'Search failed');
+    sendError(res, 500, 'Search failed');
   }
 });
 

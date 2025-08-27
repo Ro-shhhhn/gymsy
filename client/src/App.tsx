@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import UserPreferences from './pages/UserPreferences';
 import PremadeWorkouts from './pages/PremadeWorkouts';
+import WorkoutDetails from './pages/WorkoutDetails';
 import { isAuthenticated } from './utils/api';
 
 // Protected Route Component for Users
@@ -77,10 +78,17 @@ const App: React.FC = () => {
         {/* Workout plan detail route */}
         <Route path="/workout-plan/:id" element={
           <ProtectedRoute>
+            <WorkoutDetails />
+          </ProtectedRoute>
+        } />
+
+        {/* Workout session route (for starting workouts) */}
+        <Route path="/workout-session/:id" element={
+          <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
               <div className="text-center text-white">
-                <h1 className="text-3xl font-bold mb-4">🔍 Workout Plan Details</h1>
-                <p className="text-purple-200 mb-8">Coming Soon! View detailed workout plan information and exercises.</p>
+                <h1 className="text-3xl font-bold mb-4">Workout Session</h1>
+                <p className="text-purple-200 mb-8">Coming Soon! Start your workout with timer, exercise guides, and progress tracking.</p>
                 <button 
                   onClick={() => window.history.back()}
                   className="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg transition-colors"
@@ -97,7 +105,7 @@ const App: React.FC = () => {
           <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
               <div className="text-center text-white">
-                <h1 className="text-3xl font-bold mb-4">🧠 AI Workout Recommender</h1>
+                <h1 className="text-3xl font-bold mb-4">AI Workout Recommender</h1>
                 <p className="text-purple-200 mb-8">Coming Soon! Our AI will create personalized workouts just for you.</p>
                 <button 
                   onClick={() => window.history.back()}
@@ -114,7 +122,7 @@ const App: React.FC = () => {
           <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
               <div className="text-center text-white">
-                <h1 className="text-3xl font-bold mb-4">💪 My Workouts</h1>
+                <h1 className="text-3xl font-bold mb-4">My Workouts</h1>
                 <p className="text-purple-200 mb-8">Coming Soon! View and manage all your workout sessions.</p>
                 <button 
                   onClick={() => window.history.back()}
@@ -131,7 +139,7 @@ const App: React.FC = () => {
           <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
               <div className="text-center text-white">
-                <h1 className="text-3xl font-bold mb-4">📈 Progress Tracking</h1>
+                <h1 className="text-3xl font-bold mb-4">Progress Tracking</h1>
                 <p className="text-purple-200 mb-8">Coming Soon! Track your fitness progress with detailed analytics.</p>
                 <button 
                   onClick={() => window.history.back()}
@@ -148,7 +156,7 @@ const App: React.FC = () => {
           <ProtectedRoute>
             <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
               <div className="text-center text-white">
-                <h1 className="text-3xl font-bold mb-4">⚙️ Settings</h1>
+                <h1 className="text-3xl font-bold mb-4">Settings</h1>
                 <p className="text-purple-200 mb-8">Coming Soon! Customize your app preferences and account settings.</p>
                 <button 
                   onClick={() => window.history.back()}
