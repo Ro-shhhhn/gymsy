@@ -10,6 +10,7 @@ import {
 import { api, handleAuthError, ApiError } from '../utils/api';
 import type { WorkoutPlan, Exercise } from '../types';
 
+
 const WorkoutDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -63,7 +64,9 @@ const WorkoutDetails: React.FC = () => {
   };
 
   const handleStartWorkout = () => {
-    navigate(`/workout-session/${id}`);
+    // Updated to use workout._id if available, otherwise fallback to the id from params
+    const workoutId = workout?._id || id;
+    navigate(`/workout-session/${workoutId}`);
   };
 
   const handleSaveWorkout = async () => {

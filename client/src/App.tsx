@@ -15,6 +15,9 @@ import UserPreferences from './pages/UserPreferences';
 import PremadeWorkouts from './pages/PremadeWorkouts';
 import WorkoutDetails from './pages/WorkoutDetails';
 import { isAuthenticated } from './utils/api';
+import WorkoutSession from './pages/WorkoutSession';
+
+
 
 // Protected Route Component for Users
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -83,22 +86,14 @@ const App: React.FC = () => {
         } />
 
         {/* Workout session route (for starting workouts) */}
-        <Route path="/workout-session/:id" element={
-          <ProtectedRoute>
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-              <div className="text-center text-white">
-                <h1 className="text-3xl font-bold mb-4">Workout Session</h1>
-                <p className="text-purple-200 mb-8">Coming Soon! Start your workout with timer, exercise guides, and progress tracking.</p>
-                <button 
-                  onClick={() => window.history.back()}
-                  className="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg transition-colors"
-                >
-                  Go Back
-                </button>
-              </div>
-            </div>
-          </ProtectedRoute>
-        } />
+       import WorkoutSession from './pages/WorkoutSession';
+
+// Replace this route:
+<Route path="/workout-session/:id" element={
+  <ProtectedRoute>
+    <WorkoutSession />
+  </ProtectedRoute>
+} />
 
         {/* Other feature routes */}
         <Route path="/ai-recommender" element={
